@@ -111,6 +111,8 @@ st.header("MIDI synthesization")
 st.caption("Upload a midi file to synthesize")
 midi_file = st.file_uploader("Upload MIDI here", type=['midi', 'mid', 'smf', 'kar'])
 volume_reduction = st.number_input("Input the volume reduction of each note here (reduced times this amount, prevents overdrive). Recommended 500", 1, 100000, 500)
+attack_length_in = st.number_input("Input the length of the attack (0-100% volume at the start of the note) in seconds. Keep this low. ", 0.0, 999999999.0, 0.01)
+fade_length_in = st.number_input("Input the length of the fade out of the note in seconds. Set high (maybe 500) to make piano-like sounds.", 0.0, 999999999.0, 0.01)#upper bound here is high to allow for piano-like fade
 if st.button("Start processing"):
     if midi_file:
         with st.spinner("Loading file..."):
@@ -123,7 +125,7 @@ if st.button("Start processing"):
         completion = st.progress(0,"Progress")
         i = 0
         for instrument in midi_data.instruments:
-            j=1
+            j=0
             for note in instrument.notes:
                 
                 frequency = pretty_midi.note_number_to_hz(note.pitch)
@@ -142,6 +144,31 @@ if st.button("Start processing"):
                 samples += square_gen(gen_harmonic_series(f, square_harmonic_count), gen_volume_series(square_harmonic_volume_decay, square_harmonic_count), duration, fs)*square_volume_proportion
                 samples*=volume
                 samples/=float(volume_reduction)
+
+                #Make the gradual attack.
+                attack_length = int(attack_length_in*sample_rate)#by indicies/frames of output
+                if attack_length >= len(samples):
+                    attack_length = len(samples)-1
+                slope = 1/attack_length#y=mx+b, b being 0, m being this
+                attack = []
+                for x in range(attack_length):
+                    attack.append(float(x)*slope)
+                
+                #apply the attack
+                samples[:attack_length] *= np.array(attack, dtype=np.float32)
+
+                #Make the gradual cutoff at the end
+                fade_length = int(fade_length_in*sample_rate)
+                if fade_length >= len(samples):
+                    fade_length = len(samples)-1
+                slope = -1/fade_length#y=mx+1, this being m
+                fade = []
+                for x in range(fade_length):
+                    fade.append((float(x)*slope)+1)
+                
+                #apply the fade
+                samples[-fade_length:] *= np.array(fade, dtype=np.float32)
+
                 output_buffer[int(start):int(start)+len(samples)]+=samples
 
                 #update progress
