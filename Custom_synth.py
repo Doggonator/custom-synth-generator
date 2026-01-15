@@ -3,6 +3,8 @@ import numpy as np
 from scipy import signal
 import scipy
 import streamlit as st
+import pretty_midi
+import math
 
 st.title("Custom synth generator")
 st.caption("Created by Drew Warner")
@@ -31,7 +33,7 @@ def saw_gen(frequencies, strengths, duration, fs):#same as sin_gen, but sawtooth
     samples = np.float32()
     for i in range(len(frequencies)):
         f = frequencies[i]
-        t = np.linspace(0, duration, int(fs*duration), endpoint=False)#gen time for sawtooth
+        t = np.linspace(0, duration, int(math.ceil(fs*duration)), endpoint=False)#gen time for sawtooth
         samples+=((signal.sawtooth(2*np.pi*f*t)).astype(np.float32)*strengths[i])
     return samples
 
@@ -40,7 +42,7 @@ def square_gen(frequencies, strengths, duration, fs):#same as sin_gen, but squar
     samples = np.float32()
     for i in range(len(frequencies)):
         f = frequencies[i]
-        t = np.linspace(0, duration, int(fs*duration), endpoint=False)#gen time for sawtooth
+        t = np.linspace(0, duration, int(math.ceil(fs*duration)), endpoint=False)#gen time
         samples+=((signal.square(2*np.pi*f*t)).astype(np.float32)*strengths[i])
     return samples
 
@@ -53,7 +55,7 @@ sample_rate = st.number_input("Select sample rate", 1, 100000000, 44100)
 
 st.subheader("Sine")
 sin_volume_proportion = st.slider("Select a relative volume for the sine component: ", 0, 100, 80)
-sin_harmonic_count = st.number_input("Select number of harmonics (at least 1, for base frequency)", 1, 1000, 80, key='sin1')
+sin_harmonic_count = st.number_input("Select number of harmonics (at least 1, for base frequency)", 1, 1000, 10, key='sin1')
 sin_harmonic_volume_decay = st.number_input("Select the harmonic volume decay (i.e. 0.5 = each one is half as loud as the last)", 0.0, 1.0, 0.3, key='sin2')
 
 st.space(size="small")
@@ -104,3 +106,61 @@ if st.button("Generate audio sample"):
     #with st.spinner("Cleaning up"):
     #    stream.close()
     #    p.terminate()
+
+st.header("MIDI synthesization")
+st.caption("Upload a midi file to synthesize")
+midi_file = st.file_uploader("Upload MIDI here", type=['midi', 'mid', 'smf', 'kar'])
+volume_reduction = st.number_input("Input the volume reduction of each note here (reduced times this amount, prevents overdrive). Recommended 500", 1, 100000, 500)
+if st.button("Start processing"):
+    if midi_file:
+        with st.spinner("Loading file..."):
+            midi_data = pretty_midi.PrettyMIDI(midi_file)
+        current_time = 0.0
+        midi_data_end = midi_data.get_end_time()
+        output_buffer = np.zeros(int(np.ceil(midi_data_end*sample_rate)), dtype=np.float32)
+        #load each note from the midi and add it to the correct slices of the output buffer
+        
+        completion = st.progress(0,"Progress")
+        i = 0
+        for instrument in midi_data.instruments:
+            j=1
+            for note in instrument.notes:
+                
+                frequency = pretty_midi.note_number_to_hz(note.pitch)
+                volume = note.velocity/127#velocity is basically how hard key is hit, basically volume. Corrected to 0-1 range
+                start = note.start*sample_rate#adjusted for samples to insert into output buffer
+                end = note.end*sample_rate
+                #now that we have all the information, make the note.
+
+
+                fs = sample_rate#sample rate
+                duration = (end-start)/sample_rate
+                f = float(frequency)#Hz
+                samples = np.float32()
+                samples += sin_gen(gen_harmonic_series(f, sin_harmonic_count), gen_volume_series(sin_harmonic_volume_decay, sin_harmonic_count), duration, fs)*sin_volume_proportion
+                samples += saw_gen(gen_harmonic_series(f, saw_harmonic_count), gen_volume_series(saw_harmonic_volume_decay, saw_harmonic_count), duration, fs)*saw_volume_proportion
+                samples += square_gen(gen_harmonic_series(f, square_harmonic_count), gen_volume_series(square_harmonic_volume_decay, square_harmonic_count), duration, fs)*square_volume_proportion
+                samples*=volume
+                samples/=float(volume_reduction)
+                output_buffer[int(start):int(start)+len(samples)]+=samples
+
+                #update progress
+                j += 1
+                prog = (j/len(instrument.notes))/len(midi_data.instruments)+(i/len(midi_data.instruments))
+                if prog > 1.0:#prevent streamlit error if something goes wrong here
+                    prog = 1.0
+                completion.progress(prog)
+            i+=1
+            
+
+
+
+        #output the midi itself
+        with st.spinner("Outputting sound file"):
+            scipy.io.wavfile.write("rendered.wav", sample_rate, output_buffer)
+            st.audio("rendered.wav", format="audio/wav")
+    else:#if no midi file was provided but button was pressed
+        st.error("No midi file provided")
+
+            
+
