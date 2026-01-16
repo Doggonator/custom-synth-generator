@@ -179,7 +179,7 @@ if st.button("Start processing"):
                 samples/=float(volume_reduction)
 
                 #Make the gradual attack.
-                if attack_length > 0:
+                if attack_length_in > 0:
                     attack_length = int(attack_length_in*sample_rate)#by indicies/frames of output
                     if attack_length >= len(samples):
                         attack_length = len(samples)-1
@@ -191,7 +191,7 @@ if st.button("Start processing"):
                     #apply the attack
                     samples[:attack_length] *= np.array(attack, dtype=np.float32)
                 
-                if fade_length > 0:
+                if fade_length_in > 0:
                     #Make the gradual cutoff at the end
                     fade_length = int(fade_length_in*sample_rate)
                     if fade_length >= len(samples):
