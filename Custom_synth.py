@@ -130,7 +130,7 @@ if st.button("Generate audio sample"):
 st.header("MIDI synthesization")
 st.caption("Upload a midi file to synthesize")
 midi_file = st.file_uploader("Upload MIDI here", type=['midi', 'mid', 'smf', 'kar'])
-volume_reduction = st.number_input("Input the volume reduction of each note here (reduced times this amount, prevents overdrive). Recommended 5", 1, 100000, 5)
+volume_reduction = st.number_input("Input the volume reduction of each note here (reduced times this amount, prevents overdrive). Recommended 20", 1, 100000, 20)
 attack_length_in = st.number_input("Input the length of the attack (0-100% volume at the start of the note) in seconds. Keep this low. ", 0.0, 999999999.0, 0.01)
 fade_length_in = st.number_input("Input the length of the fade out of the note in seconds. Set high (maybe 500) to make piano-like sounds.", 0.0, 999999999.0, 0.01)#upper bound here is high to allow for piano-like fade
 if st.button("Start processing"):
