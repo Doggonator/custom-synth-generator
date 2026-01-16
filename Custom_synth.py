@@ -179,29 +179,33 @@ if st.button("Start processing"):
                 samples/=float(volume_reduction)
 
                 #Make the gradual attack.
-                attack_length = int(attack_length_in*sample_rate)#by indicies/frames of output
-                if attack_length >= len(samples):
-                    attack_length = len(samples)-1
-                slope = 1/attack_length#y=mx+b, b being 0, m being this
-                attack = []
-                for x in range(attack_length):
-                    attack.append(float(x)*slope)
+                if attack_length > 0:
+                    attack_length = int(attack_length_in*sample_rate)#by indicies/frames of output
+                    if attack_length >= len(samples):
+                        attack_length = len(samples)-1
+                    slope = 1/attack_length#y=mx+b, b being 0, m being this
+                    attack = []
+                    for x in range(attack_length):
+                        attack.append(float(x)*slope)
+                    
+                    #apply the attack
+                    samples[:attack_length] *= np.array(attack, dtype=np.float32)
                 
-                #apply the attack
-                samples[:attack_length] *= np.array(attack, dtype=np.float32)
+                if fade_length > 0:
+                    #Make the gradual cutoff at the end
+                    fade_length = int(fade_length_in*sample_rate)
+                    if fade_length >= len(samples):
+                        fade_length = len(samples)-1
+                    slope = -1/fade_length#y=mx+1, this being m
+                    fade = []
+                    for x in range(fade_length):
+                        fade.append((float(x)*slope)+1)
+                    
+                    #apply the fade
+                    samples[-fade_length:] *= np.array(fade, dtype=np.float32)
 
-                #Make the gradual cutoff at the end
-                fade_length = int(fade_length_in*sample_rate)
-                if fade_length >= len(samples):
-                    fade_length = len(samples)-1
-                slope = -1/fade_length#y=mx+1, this being m
-                fade = []
-                for x in range(fade_length):
-                    fade.append((float(x)*slope)+1)
-                
-                #apply the fade
-                samples[-fade_length:] *= np.array(fade, dtype=np.float32)
 
+                #add wave to output buffer
                 output_buffer[int(start):int(start)+len(samples)]+=samples
 
                 #update progress
