@@ -5,6 +5,7 @@ import scipy
 import streamlit as st
 import pretty_midi
 import math
+import plotly.graph_objects as go
 
 st.title("Custom synth generator")
 st.caption("Created by Drew Warner")
@@ -43,15 +44,16 @@ def square_gen(frequencies, strengths, duration, fs):#same as sin_gen, but squar
     for i in range(len(frequencies)):
         f = frequencies[i]
         t = np.linspace(0, duration, int(math.ceil(fs*duration)), endpoint=False)#gen time
-        samples+=((signal.square(2*np.pi*f*t)).astype(np.float32)*strengths[i])
+        samples += ((signal.square(2*np.pi*f*t)).astype(np.float32)*strengths[i])
     return samples
 
 
 #samples = square_gen(gen_harmonic_series(440, 80), gen_volume_series(0.7, 80), duration, fs)
 
 
-frequency = st.number_input("Select demo frequency", 1.0, 20000.0, 440.0)
+
 sample_rate = st.number_input("Select sample rate", 1, 100000000, 44100)
+smoothing_rounds = st.number_input("Select a number of smoothing rounds for the output wave (rolling average)", 0, 100, 0)
 
 st.subheader("Sine")
 sin_volume_proportion = st.slider("Select a relative volume for the sine component: ", 0, 100, 80)
@@ -75,8 +77,12 @@ square_harmonic_volume_decay = st.number_input("Select the harmonic volume decay
 
 st.space(size="small")
 
+frequency = st.number_input("Select demo frequency", 1.0, 20000.0, 440.0)
+
+st.space(size='small')
+
 if st.button("Generate audio sample"):
-    total_volumes = (sin_volume_proportion+saw_volume_proportion+square_harmonic_volume_decay)
+    total_volumes = (sin_volume_proportion+saw_volume_proportion+square_volume_proportion)
     #balance by dividing
     sin_volume_proportion /= total_volumes
     saw_volume_proportion /= total_volumes
@@ -94,7 +100,14 @@ if st.button("Generate audio sample"):
         samples += sin_gen(gen_harmonic_series(f, sin_harmonic_count), gen_volume_series(sin_harmonic_volume_decay, sin_harmonic_count), duration, fs)*sin_volume_proportion
         samples += saw_gen(gen_harmonic_series(f, saw_harmonic_count), gen_volume_series(saw_harmonic_volume_decay, saw_harmonic_count), duration, fs)*saw_volume_proportion
         samples += square_gen(gen_harmonic_series(f, square_harmonic_count), gen_volume_series(square_harmonic_volume_decay, square_harmonic_count), duration, fs)*square_volume_proportion
-    
+
+        #add the rolling average to the wave
+        if smoothing_rounds != 0:
+            for _ in range(smoothing_rounds):
+                samples = np.convolve(samples, np.ones(3, dtype=np.float32)/3, mode="same")
+            
+
+        
     with st.spinner("Outputting sample"):
         scipy.io.wavfile.write("sample.wav", sample_rate, volume*samples)
         st.audio("sample.wav", format="audio/wav")
@@ -107,10 +120,17 @@ if st.button("Generate audio sample"):
     #    stream.close()
     #    p.terminate()
 
+    #draw a graph of the wave
+    st.caption("Waveform")
+    with st.spinner("Plotting waveform"):
+        x = np.arange(len(samples[:int(1/f*4*fs)]))
+        st.plotly_chart(go.Figure(go.Scatter(x=x, y=samples[:int(1/f*4*fs)], mode="lines")))
+    
+
 st.header("MIDI synthesization")
 st.caption("Upload a midi file to synthesize")
 midi_file = st.file_uploader("Upload MIDI here", type=['midi', 'mid', 'smf', 'kar'])
-volume_reduction = st.number_input("Input the volume reduction of each note here (reduced times this amount, prevents overdrive). Recommended 500", 1, 100000, 500)
+volume_reduction = st.number_input("Input the volume reduction of each note here (reduced times this amount, prevents overdrive). Recommended 5", 1, 100000, 5)
 attack_length_in = st.number_input("Input the length of the attack (0-100% volume at the start of the note) in seconds. Keep this low. ", 0.0, 999999999.0, 0.01)
 fade_length_in = st.number_input("Input the length of the fade out of the note in seconds. Set high (maybe 500) to make piano-like sounds.", 0.0, 999999999.0, 0.01)#upper bound here is high to allow for piano-like fade
 if st.button("Start processing"):
@@ -120,6 +140,12 @@ if st.button("Start processing"):
         current_time = 0.0
         midi_data_end = midi_data.get_end_time()
         output_buffer = np.zeros(int(np.ceil(midi_data_end*sample_rate)), dtype=np.float32)
+        #balance volumes, by dividing
+        total_volumes = (sin_volume_proportion+saw_volume_proportion+square_volume_proportion)
+        sin_volume_proportion /= total_volumes
+        saw_volume_proportion /= total_volumes
+        square_volume_proportion /= total_volumes
+
         #load each note from the midi and add it to the correct slices of the output buffer
         
         completion = st.progress(0,"Progress")
@@ -142,6 +168,13 @@ if st.button("Start processing"):
                 samples += sin_gen(gen_harmonic_series(f, sin_harmonic_count), gen_volume_series(sin_harmonic_volume_decay, sin_harmonic_count), duration, fs)*sin_volume_proportion
                 samples += saw_gen(gen_harmonic_series(f, saw_harmonic_count), gen_volume_series(saw_harmonic_volume_decay, saw_harmonic_count), duration, fs)*saw_volume_proportion
                 samples += square_gen(gen_harmonic_series(f, square_harmonic_count), gen_volume_series(square_harmonic_volume_decay, square_harmonic_count), duration, fs)*square_volume_proportion
+                
+                #add the rolling average to the wave
+                if smoothing_rounds != 0:
+                    for _ in range(smoothing_rounds):
+                        samples = np.convolve(samples, np.ones(3, dtype=np.float32)/3, mode="same")
+            
+                
                 samples*=volume
                 samples/=float(volume_reduction)
 
